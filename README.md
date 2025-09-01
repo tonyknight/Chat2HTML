@@ -24,8 +24,8 @@ This Python script converts a WhatsApp chat text export into a beautiful, self-c
 
 1.  **Clone the Repository**:
     ```bash
-    git clone <your-repo-url>
-    cd WhatsApp-HTML-Export
+    git clone https://github.com/tonyknight/WAChat2HTML.git
+    cd WAChat2HTML
     ```
 
 2.  **Create a Virtual Environment**: It is highly recommended to use a virtual environment to manage dependencies.
