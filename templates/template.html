@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+     <meta charset="UTF-8">
+     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+     <title>WhatsApp Chat Export</title>
+     <style>
+          /* Nord Theme Color Palette */
+          :root {
+               --nord0: #2E3440;
+               /* Polar Night */
+               --nord1: #3B4252;
+               /* Polar Night */
+               --nord2: #434C5E;
+               /* Polar Night */
+               --nord3: #4C566A;
+               /* Polar Night */
+               --nord4: #D8DEE9;
+               /* Snow Storm */
+               --nord5: #E5E9F0;
+               /* Snow Storm */
+               --nord6: #ECEFF4;
+               /* Snow Storm */
+               --nord8: #88C0D0;
+               /* Frost */
+               --nord10: #5E81AC;
+               /* Frost */
+               --nord11: #BF616A;
+               /* Aurora - Red */
+          }
+
+          body {
+               background-color: var(--nord0);
+               color: var(--nord4);
+               font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+               margin: 0;
+               padding: 1rem;
+               font-size: 16px;
+          }
+
+          .chat-container {
+               max-width: 800px;
+               margin: 0 auto;
+               display: flex;
+               flex-direction: column;
+          }
+
+          /* --- Calendar Header --- */
+          #calendar-header {
+               background-color: var(--nord1);
+               border-radius: 8px;
+               padding: 1rem;
+               margin-bottom: 2rem;
+               text-align: center;
+          }
+
+          .calendar-nav {
+               display: flex;
+               justify-content: space-between;
+               align-items: center;
+               margin-bottom: 1rem;
+          }
+
+          .calendar-months-container {
+               display: flex;
+               flex-grow: 1;
+               overflow: hidden;
+          }
+
+          .calendar-nav-arrow {
+               cursor: pointer;
+               font-size: 1.5rem;
+               padding: 0 1rem;
+               user-select: none;
+          }
+
+          .calendar-grid {
+               display: grid;
+               grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+               gap: 1rem;
+          }
+
+          .month {
+               padding: 1rem;
+               flex-shrink: 0;
+               width: 33.333%;
+               box-sizing: border-box;
+          }
+
+          .month-name {
+               font-size: 1.2rem;
+               font-weight: bold;
+               margin-bottom: 1rem;
+               color: var(--nord6);
+          }
+
+          .days {
+               display: grid;
+               grid-template-columns: repeat(7, 1fr);
+               gap: 5px;
+          }
+
+          .day,
+          .day-name {
+               display: flex;
+               justify-content: center;
+               align-items: center;
+               height: 30px;
+               border-radius: 4px;
+          }
+
+          .day-name {
+               font-weight: bold;
+               color: var(--nord8);
+               font-size: 0.8rem;
+          }
+
+          .day.no-message {
+               color: var(--nord3);
+          }
+
+          .day.has-message a {
+               text-decoration: none;
+               color: var(--nord5);
+               background-color: var(--nord10);
+               width: 100%;
+               height: 100%;
+               display: flex;
+               justify-content: center;
+               align-items: center;
+               border-radius: 4px;
+               transition: background-color 0.2s;
+          }
+
+          .day.has-message a:hover {
+               background-color: var(--nord8);
+               color: var(--nord0);
+          }
+
+          .day.empty {
+               visibility: hidden;
+          }
+
+
+          /* --- Chat Log --- */
+          #chat-log {
+               display: flex;
+               flex-direction: column;
+               gap: 1rem;
+          }
+
+          .date-separator {
+               text-align: center;
+               margin: 1.5rem 0;
+          }
+
+          .date-separator span {
+               background-color: var(--nord2);
+               color: var(--nord5);
+               padding: 0.5rem 1rem;
+               border-radius: 12px;
+               font-size: 0.9rem;
+               font-weight: bold;
+          }
+
+          .message-group {
+               display: flex;
+               flex-direction: column;
+          }
+
+          .message {
+               max-width: 70%;
+               padding: 0.75rem 1rem;
+               border-radius: 18px;
+               line-height: 1.4;
+               position: relative;
+          }
+
+          .message.sent {
+               background-color: var(--nord10);
+               color: var(--nord6);
+               align-self: flex-end;
+               border-bottom-right-radius: 4px;
+          }
+
+          .message.received {
+               background-color: var(--nord2);
+               align-self: flex-start;
+               border-bottom-left-radius: 4px;
+          }
+
+          .author {
+               font-weight: bold;
+               margin-bottom: 0.25rem;
+               color: var(--nord8);
+          }
+
+          .timestamp {
+               font-size: 0.75rem;
+               color: var(--nord4);
+               opacity: 0.7;
+               margin-top: 0.3rem;
+               text-align: right;
+          }
+
+          .translation {
+               border-top: 1px solid var(--nord3);
+               margin-top: 0.5rem;
+               padding-top: 0.5rem;
+               background-color: rgba(0, 0, 0, 0.1);
+               /* Slightly different background */
+               font-style: italic;
+          }
+
+          .image-attachment img {
+               max-height: 200px;
+               width: auto;
+               max-width: 100%;
+               border-radius: 12px;
+               cursor: pointer;
+          }
+
+          /* --- NEW: Gallery Styles --- */
+          .gallery-container {
+               display: flex;
+               flex-wrap: wrap;
+               gap: 5px;
+          }
+
+          .gallery-container .image-attachment img {
+               width: 100px;
+               height: 100px;
+               object-fit: cover;
+               border-radius: 8px;
+               max-height: none;
+               /* Override the single image height constraint */
+          }
+
+          /* --- Image Lightbox --- */
+          #lightbox-overlay {
+               position: fixed;
+               top: 0;
+               left: 0;
+               width: 100%;
+               height: 100%;
+               background-color: rgba(0, 0, 0, 0.85);
+               display: none;
+               /* Hidden by default */
+               justify-content: center;
+               align-items: center;
+               z-index: 1000;
+          }
+
+          #lightbox-image {
+               max-width: 90%;
+               max-height: 90%;
+               object-fit: contain;
+          }
+
+          .lightbox-nav {
+               position: fixed;
+               top: 50%;
+               transform: translateY(-50%);
+               width: 50px;
+               height: 50px;
+               background-color: rgba(255, 255, 255, 0.2);
+               color: white;
+               font-size: 2rem;
+               display: flex;
+               justify-content: center;
+               align-items: center;
+               cursor: pointer;
+               user-select: none;
+               border-radius: 50%;
+          }
+
+          #lightbox-prev {
+               left: 2rem;
+          }
+
+          #lightbox-next {
+               right: 2rem;
+          }
+     </style>
+</head>
+
+<body>
+
+     <div class="chat-container">
+          <header id="calendar-header">
+               <!-- Calendar will be generated here by Jinja2 -->
+               <div class="calendar-nav">
+                    <div class="calendar-nav-arrow" id="cal-prev" style="visibility: hidden;">❮</div>
+                    <div class="calendar-months-container" id="cal-months-container">
+                         {% for month in calendar_data %}
+                         <div class="month" data-month-id="{{ loop.index0 }}">
+                              <div class="month-name">{{ month.name }}</div>
+                              <div class="days">
+                                   <div class="day-name">S</div>
+                                   <div class="day-name">M</div>
+                                   <div class="day-name">T</div>
+                                   <div class="day-name">W</div>
+                                   <div class="day-name">T</div>
+                                   <div class="day-name">F</div>
+                                   <div class="day-name">S</div>
+                                   {% for week in month.weeks %}
+                                   {% for day_info in week %}
+                                   {% if day_info.day == 0 %}
+                                   <div class="day empty"></div>
+                                   {% else %}
+                                   <div class="day {{ 'has-message' if day_info.has_message else 'no-message' }}">
+                                        {% if day_info.has_message %}
+                                        <a href="#date-{{ day_info.date_str }}">{{ day_info.day }}</a>
+                                        {% else %}
+                                        {{ day_info.day }}
+                                        {% endif %}
+                                   </div>
+                                   {% endif %}
+                                   {% endfor %}
+                                   {% endfor %}
+                              </div>
+                         </div>
+                         {% endfor %}
+                    </div>
+                    <div class="calendar-nav-arrow" id="cal-next">❯</div>
+               </div>
+          </header>
+
+          <main id="chat-log">
+               {% for date, messages in messages_by_date.items() %}
+               <div class="date-separator" id="date-{{ date.strftime('%Y-%m-%d') }}">
+                    <a href="#calendar-header" class="date-link" data-month-id="{{ date.strftime('%Y-%m') }}">
+                         <span>{{ date.strftime('%B %d, %Y') }}</span>
+                    </a>
+               </div>
+
+               {% for message in messages %}
+               <div class="message-group">
+                    <div class="message {{ 'sent' if message.author == main_author else 'received' }}">
+                         <div class="author">{{ message.author }}</div>
+
+                         <div class="content">
+                              {% if message.type == 'gallery' %}
+                              <div class="gallery-container">
+                                   {% for image_msg in message.images %}
+                                   <div class="image-attachment">
+                                        <img src="{{ image_msg.message }}" alt="Attachment"
+                                             data-src="{{ image_msg.message }}">
+                                   </div>
+                                   {% endfor %}
+                              </div>
+                              {% elif message.type == 'image' %}
+                              <div class="image-attachment">
+                                   <img src="{{ message.message }}" alt="Attachment" data-src="{{ message.message }}">
+                              </div>
+                              {% else %}
+                              {{ message.message | replace('\n', '<br>') | safe }}
+                              {% if message.translation %}
+                              <div class="translation">
+                                   {{ message.translation }}
+                              </div>
+                              {% endif %}
+                              {% endif %}
+                         </div>
+                         <div class="timestamp">{{ message.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</div>
+                    </div>
+               </div>
+               {% endfor %}
+               {% endfor %}
+          </main>
+     </div>
+
+     <!-- Lightbox Structure -->
+     <div id="lightbox-overlay">
+          <div class="lightbox-nav" id="lightbox-prev">&lt;</div>
+          <img src="" alt="Full-screen preview" id="lightbox-image">
+          <div class="lightbox-nav" id="lightbox-next">&gt;</div>
+     </div>
+
+     <script>
+          // JavaScript for interactivity will be added here
+
+          // --- Lightbox Logic ---
+          document.addEventListener('DOMContentLoaded', () => {
+               const images = document.querySelectorAll('.image-attachment img');
+               const lightbox = document.getElementById('lightbox-overlay');
+               const lightboxImg = document.getElementById('lightbox-image');
+               const prevButton = document.getElementById('lightbox-prev');
+               const nextButton = document.getElementById('lightbox-next');
+
+               let allImageSources = [];
+               images.forEach(img => allImageSources.push(img.dataset.src));
+               let currentIndex = 0;
+
+               images.forEach((img, index) => {
+                    img.addEventListener('click', () => {
+                         currentIndex = index;
+                         lightboxImg.src = allImageSources[currentIndex];
+                         lightbox.style.display = 'flex';
+                    });
+               });
+
+               const showImage = (index) => {
+                    if (index >= 0 && index < allImageSources.length) {
+                         currentIndex = index;
+                         lightboxImg.src = allImageSources[currentIndex];
+                    }
+               };
+
+               // Close lightbox
+               lightbox.addEventListener('click', (e) => {
+                    if (e.target === lightbox) {
+                         lightbox.style.display = 'none';
+                    }
+               });
+
+               // Navigation
+               prevButton.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    showImage(currentIndex - 1);
+               });
+
+               nextButton.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    showImage(currentIndex + 1);
+               });
+
+               // Keyboard navigation
+               document.addEventListener('keydown', (e) => {
+                    if (lightbox.style.display === 'flex') {
+                         if (e.key === 'ArrowLeft') {
+                              showImage(currentIndex - 1);
+                         } else if (e.key === 'ArrowRight') {
+                              showImage(currentIndex + 1);
+                         } else if (e.key === 'Escape') {
+                              lightbox.style.display = 'none';
+                         }
+                    }
+               });
+          });
+
+          // --- Calendar Logic ---
+          document.addEventListener('DOMContentLoaded', () => {
+               const container = document.getElementById('cal-months-container');
+               const prevBtn = document.getElementById('cal-prev');
+               const nextBtn = document.getElementById('cal-next');
+               const months = document.querySelectorAll('.month');
+               const dateLinks = document.querySelectorAll('.date-link');
+               const monthsToShow = 3;
+               let currentStartIndex = 0;
+
+               function findMonthIndex(monthId) {
+                    let foundIndex = -1;
+                    months.forEach((month, index) => {
+                         const monthElement = month.querySelector(`.month-name`);
+                         // A bit of a hacky way to match the ID, but effective
+                         if (month.outerHTML.includes(monthId)) {
+                              foundIndex = index;
+                         }
+                    });
+                    return foundIndex;
+               }
+
+
+               function updateCalendarView() {
+                    const totalMonths = months.length;
+                    months.forEach((month, index) => {
+                         if (index >= currentStartIndex && index < currentStartIndex + monthsToShow) {
+                              month.style.display = 'block';
+                         } else {
+                              month.style.display = 'none';
+                         }
+                    });
+
+                    // Update button visibility
+                    prevBtn.style.visibility = currentStartIndex === 0 ? 'hidden' : 'visible';
+                    nextBtn.style.visibility = currentStartIndex + monthsToShow >= totalMonths ? 'hidden' : 'visible';
+               }
+
+               nextBtn.addEventListener('click', () => {
+                    const totalMonths = months.length;
+                    if (currentStartIndex + monthsToShow < totalMonths) {
+                         currentStartIndex++;
+                         updateCalendarView();
+                    }
+               });
+
+               prevBtn.addEventListener('click', () => {
+                    if (currentStartIndex > 0) {
+                         currentStartIndex--;
+                         updateCalendarView();
+                    }
+               });
+
+               // Date link click handler
+               dateLinks.forEach(link => {
+                    link.addEventListener('click', (e) => {
+                         const monthId = e.currentTarget.dataset.monthId;
+
+                         let targetIndex = -1;
+                         months.forEach((monthNode, index) => {
+                              // The month name is like "August 2024". We format our ID to match.
+                              const year = monthId.substring(0, 4);
+                              const monthNum = parseInt(monthId.substring(5, 7), 10);
+                              const monthName = new Date(year, monthNum - 1, 1).toLocaleString('default', { month: 'long' });
+                              const expectedName = `${monthName} ${year}`;
+
+                              if (monthNode.querySelector('.month-name').textContent === expectedName) {
+                                   targetIndex = index;
+                              }
+                         });
+
+                         if (targetIndex !== -1) {
+                              currentStartIndex = targetIndex;
+                              updateCalendarView();
+                         }
+                    });
+               });
+
+               // Initial view setup
+               updateCalendarView();
+          });
+     </script>
+</body>
+
+</html>
