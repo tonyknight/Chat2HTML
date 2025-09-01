@@ -2,9 +2,6 @@
 
 This Python script converts a WhatsApp chat text export into a beautiful, self-contained single-page HTML file. It includes features like automatic translation, image processing, and an interactive, modern UI for easy viewing of your chat history.
 
-![Screenshot of the generated HTML chat log](placeholder.png "Sample Output")
-*(Note: Replace placeholder.png with an actual screenshot of your output)*
-
 ## Features
 
 - **Interactive Chat UI**: Displays your chat log in a clean, modern interface with distinct bubbles for each author, styled in the beautiful Nord dark theme.
