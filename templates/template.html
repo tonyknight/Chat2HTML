@@ -46,13 +46,31 @@
                flex-direction: column;
           }
 
+          /* --- Media Queries for wider screens --- */
+          @media (min-width: 1200px) {
+               .chat-container {
+                    max-width: 1100px;
+               }
+          }
+
+          @media (min-width: 1600px) {
+               .chat-container {
+                    max-width: 1400px;
+               }
+          }
+
           /* --- Calendar Header --- */
           #calendar-header {
                background-color: var(--nord1);
                border-radius: 8px;
-               padding: 1rem;
+               padding: 1rem 5%;
+               /* Adjusted padding */
                margin-bottom: 2rem;
-               text-align: center;
+               width: 90%;
+               /* Full width minus padding */
+               max-width: none;
+               /* Override chat-container constraint */
+               box-sizing: border-box;
           }
 
           .calendar-nav {
@@ -62,37 +80,43 @@
                margin-bottom: 1rem;
           }
 
-          .calendar-months-container {
-               display: flex;
-               flex-grow: 1;
-               overflow: hidden;
+          .calendar-year-display {
+               font-size: 1.5rem;
+               font-weight: bold;
+               color: var(--nord6);
           }
 
           .calendar-nav-arrow {
                cursor: pointer;
-               font-size: 1.5rem;
+               font-size: 2rem;
                padding: 0 1rem;
                user-select: none;
+               color: var(--nord8);
           }
 
-          .calendar-grid {
+          .calendar-year {
+               display: none;
+               /* Hidden by default, shown by JS */
+               grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+               gap: 1.5rem;
+               justify-content: center;
+          }
+
+          .calendar-year.active {
                display: grid;
-               grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-               gap: 1rem;
           }
 
           .month {
                padding: 1rem;
-               flex-shrink: 0;
-               width: 33.333%;
                box-sizing: border-box;
           }
 
           .month-name {
-               font-size: 1.2rem;
+               font-size: 1.1rem;
                font-weight: bold;
                margin-bottom: 1rem;
                color: var(--nord6);
+               text-align: center;
           }
 
           .days {
@@ -122,20 +146,21 @@
 
           .day.has-message a {
                text-decoration: none;
-               color: var(--nord5);
-               background-color: var(--nord10);
+               color: var(--nord0);
+               /* Heatmap color will be set as background */
                width: 100%;
                height: 100%;
                display: flex;
                justify-content: center;
                align-items: center;
                border-radius: 4px;
-               transition: background-color 0.2s;
+               transition: transform 0.2s, box-shadow 0.2s;
+               font-weight: bold;
           }
 
           .day.has-message a:hover {
-               background-color: var(--nord8);
-               color: var(--nord0);
+               transform: scale(1.1);
+               box-shadow: 0 0 10px rgba(136, 192, 208, 0.5);
           }
 
           .day.empty {
@@ -221,6 +246,13 @@
                cursor: pointer;
           }
 
+          .video-attachment video {
+               max-height: 200px;
+               width: auto;
+               max-width: 100%;
+               border-radius: 12px;
+          }
+
           /* --- NEW: Gallery Styles --- */
           .gallery-container {
                display: flex;
@@ -292,9 +324,17 @@
                <!-- Calendar will be generated here by Jinja2 -->
                <div class="calendar-nav">
                     <div class="calendar-nav-arrow" id="cal-prev" style="visibility: hidden;">❮</div>
-                    <div class="calendar-months-container" id="cal-months-container">
-                         {% for month in calendar_data %}
-                         <div class="month" data-month-id="{{ loop.index0 }}">
+                    <div id="calendar-year-display-container">
+                         <!-- Year will be dynamically inserted here -->
+                    </div>
+                    <div class="calendar-nav-arrow" id="cal-next">❯</div>
+               </div>
+               <div class="calendar-grid-container">
+                    {% for year_data in calendar_data_by_year %}
+                    <div class="calendar-year" data-year="{{ year_data.year }}">
+                         <div class="calendar-year-display" style="display: none;">{{ year_data.year }}</div>
+                         {% for month in year_data.months %}
+                         <div class="month">
                               <div class="month-name">{{ month.name }}</div>
                               <div class="days">
                                    <div class="day-name">S</div>
@@ -311,7 +351,9 @@
                                    {% else %}
                                    <div class="day {{ 'has-message' if day_info.has_message else 'no-message' }}">
                                         {% if day_info.has_message %}
-                                        <a href="#date-{{ day_info.date_str }}">{{ day_info.day }}</a>
+                                        <a href="#date-{{ day_info.date_str }}"
+                                             style="background-color: {{ day_info.heatmap_color }};"
+                                             title="{{ day_info.message_count }} messages">{{ day_info.day }}</a>
                                         {% else %}
                                         {{ day_info.day }}
                                         {% endif %}
@@ -323,14 +365,14 @@
                          </div>
                          {% endfor %}
                     </div>
-                    <div class="calendar-nav-arrow" id="cal-next">❯</div>
+                    {% endfor %}
                </div>
           </header>
 
           <main id="chat-log">
                {% for date, messages in messages_by_date.items() %}
                <div class="date-separator" id="date-{{ date.strftime('%Y-%m-%d') }}">
-                    <a href="#calendar-header" class="date-link" data-month-id="{{ date.strftime('%Y-%m') }}">
+                    <a href="#calendar-header" class="date-link" data-year="{{ date.year }}">
                          <span>{{ date.strftime('%B %d, %Y') }}</span>
                     </a>
                </div>
@@ -353,6 +395,13 @@
                               {% elif message.type == 'image' %}
                               <div class="image-attachment">
                                    <img src="{{ message.message }}" alt="Attachment" data-src="{{ message.message }}">
+                              </div>
+                              {% elif message.type == 'video' %}
+                              <div class="video-attachment">
+                                   <video controls>
+                                        <source src="{{ message.message }}" type="video/mp4">
+                                        Your browser does not support the video tag.
+                                   </video>
                               </div>
                               {% else %}
                               {{ message.message | replace('\n', '<br>') | safe }}
@@ -392,10 +441,12 @@
                let allImageSources = [];
                images.forEach(img => allImageSources.push(img.dataset.src));
                let currentIndex = 0;
+               let lastViewedImageElement = null;
 
                images.forEach((img, index) => {
                     img.addEventListener('click', () => {
                          currentIndex = index;
+                         lastViewedImageElement = img; // Store the clicked image
                          lightboxImg.src = allImageSources[currentIndex];
                          lightbox.style.display = 'flex';
                     });
@@ -404,6 +455,7 @@
                const showImage = (index) => {
                     if (index >= 0 && index < allImageSources.length) {
                          currentIndex = index;
+                         lastViewedImageElement = images[currentIndex]; // Update on navigation
                          lightboxImg.src = allImageSources[currentIndex];
                     }
                };
@@ -412,6 +464,12 @@
                lightbox.addEventListener('click', (e) => {
                     if (e.target === lightbox) {
                          lightbox.style.display = 'none';
+                         if (lastViewedImageElement) {
+                              lastViewedImageElement.scrollIntoView({
+                                   behavior: 'smooth',
+                                   block: 'center'
+                              });
+                         }
                     }
                });
 
@@ -435,6 +493,12 @@
                               showImage(currentIndex + 1);
                          } else if (e.key === 'Escape') {
                               lightbox.style.display = 'none';
+                              if (lastViewedImageElement) {
+                                   lastViewedImageElement.scrollIntoView({
+                                        behavior: 'smooth',
+                                        block: 'center'
+                                   });
+                              }
                          }
                     }
                });
@@ -442,84 +506,61 @@
 
           // --- Calendar Logic ---
           document.addEventListener('DOMContentLoaded', () => {
-               const container = document.getElementById('cal-months-container');
                const prevBtn = document.getElementById('cal-prev');
                const nextBtn = document.getElementById('cal-next');
-               const months = document.querySelectorAll('.month');
+               const yearDisplay = document.getElementById('calendar-year-display-container');
+               const calendarYears = document.querySelectorAll('.calendar-year');
                const dateLinks = document.querySelectorAll('.date-link');
-               const monthsToShow = 3;
-               let currentStartIndex = 0;
-
-               function findMonthIndex(monthId) {
-                    let foundIndex = -1;
-                    months.forEach((month, index) => {
-                         const monthElement = month.querySelector(`.month-name`);
-                         // A bit of a hacky way to match the ID, but effective
-                         if (month.outerHTML.includes(monthId)) {
-                              foundIndex = index;
-                         }
-                    });
-                    return foundIndex;
-               }
-
+               let currentYearIndex = 0;
 
                function updateCalendarView() {
-                    const totalMonths = months.length;
-                    months.forEach((month, index) => {
-                         if (index >= currentStartIndex && index < currentStartIndex + monthsToShow) {
-                              month.style.display = 'block';
+                    calendarYears.forEach((yearEl, index) => {
+                         if (index === currentYearIndex) {
+                              yearEl.classList.add('active');
+                              // Update the main year display
+                              const yearText = yearEl.querySelector('.calendar-year-display').textContent;
+                              yearDisplay.textContent = yearText;
                          } else {
-                              month.style.display = 'none';
+                              yearEl.classList.remove('active');
                          }
                     });
 
                     // Update button visibility
-                    prevBtn.style.visibility = currentStartIndex === 0 ? 'hidden' : 'visible';
-                    nextBtn.style.visibility = currentStartIndex + monthsToShow >= totalMonths ? 'hidden' : 'visible';
+                    prevBtn.style.visibility = currentYearIndex === 0 ? 'hidden' : 'visible';
+                    nextBtn.style.visibility = currentYearIndex === calendarYears.length - 1 ? 'hidden' : 'visible';
                }
 
                nextBtn.addEventListener('click', () => {
-                    const totalMonths = months.length;
-                    if (currentStartIndex + monthsToShow < totalMonths) {
-                         currentStartIndex++;
+                    if (currentYearIndex < calendarYears.length - 1) {
+                         currentYearIndex++;
                          updateCalendarView();
                     }
                });
 
                prevBtn.addEventListener('click', () => {
-                    if (currentStartIndex > 0) {
-                         currentStartIndex--;
+                    if (currentYearIndex > 0) {
+                         currentYearIndex--;
                          updateCalendarView();
                     }
                });
 
-               // Date link click handler
+               // When a date is clicked in the chat log, jump to the correct year
                dateLinks.forEach(link => {
                     link.addEventListener('click', (e) => {
-                         const monthId = e.currentTarget.dataset.monthId;
-
-                         let targetIndex = -1;
-                         months.forEach((monthNode, index) => {
-                              // The month name is like "August 2024". We format our ID to match.
-                              const year = monthId.substring(0, 4);
-                              const monthNum = parseInt(monthId.substring(5, 7), 10);
-                              const monthName = new Date(year, monthNum - 1, 1).toLocaleString('default', { month: 'long' });
-                              const expectedName = `${monthName} ${year}`;
-
-                              if (monthNode.querySelector('.month-name').textContent === expectedName) {
-                                   targetIndex = index;
+                         const targetYear = e.currentTarget.dataset.year;
+                         calendarYears.forEach((yearEl, index) => {
+                              if (yearEl.dataset.year === targetYear) {
+                                   currentYearIndex = index;
+                                   updateCalendarView();
                               }
                          });
-
-                         if (targetIndex !== -1) {
-                              currentStartIndex = targetIndex;
-                              updateCalendarView();
-                         }
                     });
                });
 
                // Initial view setup
-               updateCalendarView();
+               if (calendarYears.length > 0) {
+                    updateCalendarView();
+               }
           });
      </script>
 </body>

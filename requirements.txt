@@ -1,3 +1,7 @@
 jinja2
 langdetect
 requests
+vobject
+beautifulsoup4
+tqdm
+python-dotenv
