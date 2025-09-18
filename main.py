@@ -11,6 +11,7 @@ import json
 import time
 import vobject
 import base64
+import sqlite3
 from collections import OrderedDict
 from functools import partial
 import concurrent.futures
@@ -1185,7 +1186,10 @@ def _parse_message_div(msg_div, author_dir, root_dir):
         content_div = attachment_div or sticker_div # Unified check
 
         if content_div:
-            message_obj['attachment'] = _handle_imessage_attachment(content_div, base_timestamp, author_dir, root_dir)
+            attachment_path = _handle_imessage_attachment(content_div, base_timestamp, author_dir, root_dir)
+            if attachment_path:
+                message_obj['attachment'] = attachment_path
+                message_obj['attachment_author_dir'] = os.path.basename(author_dir)
 
         # App Links (e.g., Flipboard, GamePigeon)
         app_div = part.find('div', class_='app')
@@ -1321,6 +1325,202 @@ def generate_html_from_imessage_json(directory_path):
     print("This step will take a generated JSON file and create the final HTML report.")
 
 
+def create_imessage_database(root_directory):
+    """Scans for author JSON files and imports them into a central SQLite database."""
+    print("\n--- Create iMessage Chat Database ---")
+
+    # One-time setup to identify the archive owner
+    message_owner = input("Enter your full name exactly as it appears in iMessage exports (e.g., Tony Knight): ").strip()
+    if not message_owner:
+        print("Error: A message owner name is required to correctly process the chat data.")
+        return
+
+    # Optional Vcard processing
+    vcard_path = input("Enter the path to your Vcard (.vcf) file (optional, press Enter to skip): ").strip()
+    contact_lookup = {}
+    if vcard_path:
+        print("Processing Vcard for contact lookup...")
+        try:
+            with open(vcard_path, 'r', encoding='utf-8') as f:
+                vcf_data = f.read()
+            for card in vobject.readComponents(vcf_data):
+                name = card.fn.value if hasattr(card, 'fn') else None
+                if not name: continue
+                
+                all_identifiers = []
+                if hasattr(card, 'tel'):
+                    all_identifiers.extend([str(tel.value) for tel in card.tel_list])
+                if hasattr(card, 'email'):
+                    all_identifiers.extend([str(email.value) for email in card.email_list])
+                
+                # Create reverse lookup: identifier -> {name, all_identifiers}
+                for identifier in all_identifiers:
+                    # Normalize phone numbers for better matching
+                    normalized_id = re.sub(r'\D', '', identifier)
+                    if normalized_id:
+                        contact_lookup[normalized_id] = {"name": name, "contacts": all_identifiers}
+        except Exception as e:
+            print(f"Warning: Could not process Vcard file. Proceeding without contact enrichment. Error: {e}")
+
+    db_path = os.path.join(root_directory, "imessage_archive.db")
+    # Delete existing DB file if it exists, to ensure a fresh start
+    if os.path.exists(db_path):
+        os.remove(db_path)
+        print(f"Removed existing database file: {db_path}")
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    # Create table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS messages (
+        timestamp TEXT,
+        message_author TEXT,
+        message_sender TEXT,
+        message_owner TEXT,
+        sender_contact_info TEXT,
+        body TEXT,
+        attachment_path TEXT,
+        attachment_author_dir TEXT,
+        tapbacks TEXT,
+        shared_link TEXT,
+        type TEXT
+    )''')
+    
+    # Find all author JSON files
+    author_folders = [d for d in os.listdir(root_directory) if os.path.isdir(os.path.join(root_directory, d)) and d != 'attachments']
+    json_files_found = 0
+    messages_imported = 0
+
+    print(f"Scanning {len(author_folders)} author folders for JSON files...")
+
+    for author in author_folders:
+        author_path = os.path.join(root_directory, author)
+        json_file_path = os.path.join(author_path, f"{author}.json")
+        
+        if os.path.exists(json_file_path):
+            json_files_found += 1
+            with open(json_file_path, 'r', encoding='utf-8') as f:
+                messages = json.load(f)
+            
+            for msg in messages:
+                # --- Sender Cleanup and Enrichment ---
+                raw_sender = msg.get('sender', '')
+                clean_sender = raw_sender
+                contact_info_json = None
+                
+                # Try to find a match in the vcard lookup
+                found_contact = None
+                for identifier, contact_data in contact_lookup.items():
+                    # Check if a normalized phone number is in the raw sender string
+                    if identifier in re.sub(r'\D', '', raw_sender):
+                        found_contact = contact_data
+                        break
+                
+                if found_contact:
+                    clean_sender = found_contact['name']
+                    contact_info_json = json.dumps(found_contact['contacts'])
+                else:
+                    # Fallback: if name and number are together, just keep the name
+                    match = re.match(r"([a-zA-Z\s]+)(?:\s*\+?\d+)", raw_sender)
+                    if match:
+                        clean_sender = match.group(1).strip()
+
+                # Determine message type based on the owner
+                msg_type = 'sent' if clean_sender == message_owner else 'received'
+
+                cursor.execute('''
+                INSERT INTO messages (timestamp, message_author, message_sender, message_owner, sender_contact_info, body, attachment_path, attachment_author_dir, tapbacks, shared_link, type)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    msg.get('timestamp'),
+                    author,
+                    clean_sender,
+                    message_owner,
+                    contact_info_json,
+                    msg.get('body'),
+                    msg.get('attachment'),
+                    msg.get('attachment_author_dir'),
+                    json.dumps(msg.get('tapbacks')),
+                    json.dumps(msg.get('shared_link')),
+                    msg_type
+                ))
+                messages_imported += 1
+
+    conn.commit()
+    conn.close()
+    
+    print("\n--- Database Creation Summary ---")
+    print(f"  Database created at: {db_path}")
+    print(f"  Author JSON files found: {json_files_found}")
+    print(f"  Total messages imported: {messages_imported}")
+    print("---------------------------------")
+
+
+def generate_imessage_html_from_db(root_directory):
+    """Generates individual and a master 'all chat' HTML file from the SQLite DB."""
+    print("\n--- Generate iMessage HTML Reports from Database ---")
+    db_path = os.path.join(root_directory, "imessage_archive.db")
+    if not os.path.exists(db_path):
+        print(f"Error: Database file not found at '{db_path}'. Please create it first.")
+        return
+
+    conn = sqlite3.connect(db_path)
+    # Use a dictionary cursor for easier data handling
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    # 1. Generate Individual Author HTMLs
+    print("Generating individual author HTML files...")
+    cursor.execute("SELECT DISTINCT message_author FROM messages")
+    authors = [row['message_author'] for row in cursor.fetchall()]
+    
+    for author in tqdm(authors, desc="Generating Author Reports"):
+        cursor.execute("SELECT * FROM messages WHERE message_author = ? ORDER BY timestamp", (author,))
+        messages_data = cursor.fetchall()
+        
+        if not messages_data:
+            continue
+            
+        # Convert sqlite3.Row to standard dicts and parse JSON strings
+        messages = []
+        for row in messages_data:
+            msg = dict(row)
+            msg['timestamp'] = datetime.datetime.fromisoformat(msg['timestamp'])
+            # Construct the correct path for the context
+            if msg['attachment_path'] and msg['attachment_author_dir']:
+                 # For individual reports, the path is relative to the author dir
+                 # For the All Chat view, we would use:
+                 # os.path.join(msg['attachment_author_dir'], msg['attachment_path'])
+                 pass # No change needed for now, but the data is there
+            msg['tapbacks'] = json.loads(msg['tapbacks']) if msg['tapbacks'] else None
+            msg['shared_link'] = json.loads(msg['shared_link']) if msg['shared_link'] else None
+            messages.append(msg)
+
+        min_date = messages[0]['timestamp'].date()
+        max_date = messages[-1]['timestamp'].date()
+        
+        # Generate the HTML using the generic `generate_html` function
+        generate_html(messages) # This needs to be adapted
+        
+        # Rename the output file
+        author_html_filename = f"[{author}] ({min_date} to {max_date}).html"
+        default_output_path = os.path.join(OUTPUT_DIR, "index.html")
+        new_output_path = os.path.join(root_directory, author, author_html_filename)
+        
+        # This part is tricky. generate_html is hardcoded.
+        # For now, let's just print what we WOULD do.
+        print(f"  - Would generate HTML for '{author}' with {len(messages)} messages.")
+        print(f"    and save to '{new_output_path}'")
+
+    # 2. Generate "All Chat" HTML
+    print("\nGenerating 'All Chat' master HTML file...")
+    # This will be a large operation, for now, we just indicate it.
+    print("This part of the feature is not fully implemented yet.")
+
+    conn.close()
+
+
 def handle_imessage_processing():
     """Displays the submenu for iMessage processing and calls the appropriate functions."""
     print("\n--- Apple iMessage Processing ---")
@@ -1331,8 +1531,8 @@ def handle_imessage_processing():
         print("  2. Organize Renamed Files into Author Folders")
         print("  3. Process Vcard File (.vcf)")
         print("  4. Convert All Author HTML to JSON")
-        print("  5. Create Master JSON from Author Files (Not Implemented)")
-        print("  6. Generate Final HTML from iMessage JSON (Not Implemented)")
+        print("  5. Create Chat Database from JSON files")
+        print("  6. Generate HTML Reports from Database (Not Implemented)")
         print("  7. Return to Main Menu")
         
         choice = input("Enter your choice (1-7): ").strip()
@@ -1350,11 +1550,11 @@ def handle_imessage_processing():
             path = input("Enter the path to the top-level directory containing all author folders: ").strip()
             convert_imessage_html_to_json(path)
         elif choice == '5':
-            path = input("Enter the path to the top-level directory containing all author folders: ").strip()
-            create_master_imessage_json(path)
+            path = input("Enter the path to the top-level directory containing author JSONs: ").strip()
+            create_imessage_database(path)
         elif choice == '6':
-            path = input("Enter the path to a generated iMessage JSON file: ").strip()
-            generate_html_from_imessage_json(path)
+            path = input("Enter the path to the top-level directory containing the database: ").strip()
+            generate_imessage_html_from_db(path)
         elif choice == '7':
             print("Returning to main menu...")
             break
