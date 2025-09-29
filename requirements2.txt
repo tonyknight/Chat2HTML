@@ -1,0 +1,35 @@
+# iMessage Database Tool - Python Implementation
+# Requirements file for all dependencies
+
+# Core dependencies (built into Python - no installation needed)
+# sqlite3 - built-in
+# datetime - built-in
+# json - built-in
+# os - built-in
+# argparse - built-in
+# pathlib - built-in
+# dataclasses - built-in (Python 3.7+)
+# typing - built-in
+# shutil - built-in
+# re - built-in
+
+# Contact name resolution dependencies
+# These enable VCF (vCard) file parsing and phone number normalization
+vobject>=0.9.6.1
+phonenumbers>=8.13.0
+
+# Performance and UI dependencies
+# These enable parallel processing and progress indicators
+tqdm>=4.64.0
+
+# Attachment processing dependencies
+# These enable image conversion, audio conversion, and metadata handling
+Pillow>=9.0.0
+pillow-heif>=0.10.0
+ffmpeg-python>=0.2.0
+
+# Development dependencies (optional)
+# Uncomment if you want to contribute to development
+# pytest>=7.0.0
+# black>=22.0.0
+# mypy>=1.0.0
